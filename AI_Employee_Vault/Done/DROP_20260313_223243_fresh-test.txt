@@ -1,0 +1,1 @@
+This is a fresh test file - watcher should catch this now
