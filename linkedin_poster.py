@@ -129,41 +129,31 @@ def publish_post(post_text: str, dry_run: bool = False) -> bool:
                 page.wait_for_load_state("domcontentloaded")
                 page.wait_for_timeout(3000)
 
-            # Check login by looking for profile nav or "Start a post" button
-            LOGIN_SELECTORS = [
-                "button[aria-label='Start a post']",
-                ".share-box-feed-entry__top-bar",
-                "div.feed-identity-module",
-                "nav.global-nav",
-                ".profile-rail-card",
-            ]
-            logged_in = False
-            for selector in LOGIN_SELECTORS:
-                try:
-                    page.wait_for_selector(selector, timeout=10000)
-                    print(f"[POSTER] Login confirmed via: {selector}")
-                    logged_in = True
-                    break
-                except PlaywrightTimeout:
-                    print(f"[POSTER] Not found: {selector}")
+            # Check login by URL — if we're on /feed/ we're logged in
+            current_url = page.url
+            print(f"[POSTER] Current URL: {current_url}")
+            print(f"[POSTER] Page title:  {page.title()}")
 
-            if not logged_in:
-                print("[POSTER] Could not confirm login. Current URL:", page.url)
-                print("[POSTER] Page title:", page.title())
+            if "linkedin.com/feed" not in current_url and "linkedin.com/in/" not in current_url:
                 ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
                 debug_shot = LOGS_DIR / f"login_failed_{ts}.png"
                 page.screenshot(path=str(debug_shot))
-                print(f"[POSTER] Debug screenshot saved: {debug_shot}")
-                print("[POSTER] Session expired — re-run: uv run linkedin_watcher.py --setup")
+                print(f"[POSTER] Not on feed page — session expired. Screenshot: {debug_shot}")
+                print("[POSTER] Re-run: uv run linkedin_watcher.py --setup")
                 context.close()
                 return False
 
-            # Click "Start a post"
+            print("[POSTER] Login confirmed via URL.")
+
+            # Click "Start a post" — it's a div placeholder, not a button
             print("[POSTER] Opening post composer...")
             START_POST_SELECTORS = [
-                "button[aria-label='Start a post']",
-                ".share-box-feed-entry__top-bar",
-                "button:has-text('Start a post')",
+                "div.share-box-feed-entry__trigger",
+                "div[data-placeholder='Start a post']",
+                "div.share-creation-state__placeholder",
+                "p[data-placeholder='What do you want to talk about?']",
+                "div.ql-editor",
+                "div:has-text('Start a post')",
             ]
             clicked = False
             for selector in START_POST_SELECTORS:
@@ -190,10 +180,11 @@ def publish_post(post_text: str, dry_run: bool = False) -> bool:
             # Type post content
             print("[POSTER] Typing post content...")
             EDITOR_SELECTORS = [
-                ".ql-editor",
-                "div.editor-content[contenteditable='true']",
+                "div.ql-editor[contenteditable='true']",
                 "div[role='textbox'][contenteditable='true']",
-                ".share-creation-state__text-editor div[contenteditable='true']",
+                "div.editor-content[contenteditable='true']",
+                "div[data-placeholder='What do you want to talk about?']",
+                ".share-creation-state__text-editor .ql-editor",
             ]
             editor = None
             for selector in EDITOR_SELECTORS:
