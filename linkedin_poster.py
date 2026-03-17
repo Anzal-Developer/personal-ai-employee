@@ -116,51 +116,153 @@ def publish_post(post_text: str, dry_run: bool = False) -> bool:
             page.goto("https://www.linkedin.com/feed/", timeout=20000)
             page.wait_for_load_state("domcontentloaded")
 
-            # Check logged in
-            try:
-                page.wait_for_selector("div.share-box-feed-entry__top-bar, .share-creation-state__content, button[aria-label='Start a post']", timeout=10000)
-            except PlaywrightTimeout:
-                print("[POSTER] LinkedIn session may have expired. Re-run: uv run linkedin_watcher.py --setup")
+            # Wait 3 seconds for page to settle, then inject cookies and check login
+            page.wait_for_timeout(3000)
+
+            # Manually inject cookies from session file
+            storage = json.loads(SESSION_FILE.read_text())
+            cookies = storage.get("cookies", [])
+            if cookies:
+                print(f"[POSTER] Injecting {len(cookies)} session cookies...")
+                context.add_cookies(cookies)
+                page.reload(timeout=20000)
+                page.wait_for_load_state("domcontentloaded")
+                page.wait_for_timeout(3000)
+
+            # Check login by looking for profile nav or "Start a post" button
+            LOGIN_SELECTORS = [
+                "button[aria-label='Start a post']",
+                ".share-box-feed-entry__top-bar",
+                "div.feed-identity-module",
+                "nav.global-nav",
+                ".profile-rail-card",
+            ]
+            logged_in = False
+            for selector in LOGIN_SELECTORS:
+                try:
+                    page.wait_for_selector(selector, timeout=10000)
+                    print(f"[POSTER] Login confirmed via: {selector}")
+                    logged_in = True
+                    break
+                except PlaywrightTimeout:
+                    print(f"[POSTER] Not found: {selector}")
+
+            if not logged_in:
+                print("[POSTER] Could not confirm login. Current URL:", page.url)
+                print("[POSTER] Page title:", page.title())
+                ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+                debug_shot = LOGS_DIR / f"login_failed_{ts}.png"
+                page.screenshot(path=str(debug_shot))
+                print(f"[POSTER] Debug screenshot saved: {debug_shot}")
+                print("[POSTER] Session expired — re-run: uv run linkedin_watcher.py --setup")
                 context.close()
                 return False
 
             # Click "Start a post"
             print("[POSTER] Opening post composer...")
-            start_post_btn = page.locator("button[aria-label='Start a post'], .share-box-feed-entry__top-bar").first
-            start_post_btn.click()
+            START_POST_SELECTORS = [
+                "button[aria-label='Start a post']",
+                ".share-box-feed-entry__top-bar",
+                "button:has-text('Start a post')",
+            ]
+            clicked = False
+            for selector in START_POST_SELECTORS:
+                try:
+                    btn = page.locator(selector).first
+                    btn.wait_for(timeout=10000)
+                    btn.click()
+                    print(f"[POSTER] Clicked start-post via: {selector}")
+                    clicked = True
+                    break
+                except PlaywrightTimeout:
+                    print(f"[POSTER] Start-post selector not found: {selector}")
+
+            if not clicked:
+                ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+                debug_shot = LOGS_DIR / f"no_start_post_{ts}.png"
+                page.screenshot(path=str(debug_shot))
+                print(f"[POSTER] Could not find 'Start a post' button. Screenshot: {debug_shot}")
+                context.close()
+                return False
+
             page.wait_for_timeout(2000)
 
             # Type post content
             print("[POSTER] Typing post content...")
-            editor = page.locator(".ql-editor, div[role='textbox'][contenteditable='true'], .editor-content").first
-            editor.wait_for(timeout=8000)
+            EDITOR_SELECTORS = [
+                ".ql-editor",
+                "div.editor-content[contenteditable='true']",
+                "div[role='textbox'][contenteditable='true']",
+                ".share-creation-state__text-editor div[contenteditable='true']",
+            ]
+            editor = None
+            for selector in EDITOR_SELECTORS:
+                try:
+                    loc = page.locator(selector).first
+                    loc.wait_for(timeout=10000)
+                    editor = loc
+                    print(f"[POSTER] Editor found via: {selector}")
+                    break
+                except PlaywrightTimeout:
+                    print(f"[POSTER] Editor selector not found: {selector}")
+
+            if editor is None:
+                ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+                debug_shot = LOGS_DIR / f"no_editor_{ts}.png"
+                page.screenshot(path=str(debug_shot))
+                print(f"[POSTER] Could not find text editor. Screenshot: {debug_shot}")
+                context.close()
+                return False
+
             editor.click()
             page.wait_for_timeout(500)
             editor.fill(post_text)
             page.wait_for_timeout(1500)
 
             # Take screenshot before posting
-            screenshot_path = DONE_DIR / f"linkedin_post_screenshot_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.png"
             DONE_DIR.mkdir(exist_ok=True)
+            ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            screenshot_path = DONE_DIR / f"linkedin_post_screenshot_{ts}.png"
             page.screenshot(path=str(screenshot_path))
-            print(f"[POSTER] Screenshot saved: {screenshot_path.name}")
+            print(f"[POSTER] Pre-post screenshot saved: {screenshot_path.name}")
 
             # Click Post button
             print("[POSTER] Clicking Post button...")
-            post_btn = page.locator("button.share-actions__primary-action, button[aria-label='Post'], button:has-text('Post')").last
-            post_btn.wait_for(timeout=5000)
-            post_btn.click()
-            page.wait_for_timeout(3000)
+            POST_BTN_SELECTORS = [
+                "button.share-actions__primary-action",
+                "button[aria-label='Post']",
+                "button:has-text('Post')",
+            ]
+            posted = False
+            for selector in POST_BTN_SELECTORS:
+                try:
+                    btn = page.locator(selector).last
+                    btn.wait_for(timeout=10000)
+                    btn.click()
+                    print(f"[POSTER] Post button clicked via: {selector}")
+                    posted = True
+                    break
+                except PlaywrightTimeout:
+                    print(f"[POSTER] Post button not found: {selector}")
 
-            # Confirm post appeared
+            if not posted:
+                ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+                debug_shot = LOGS_DIR / f"no_post_btn_{ts}.png"
+                page.screenshot(path=str(debug_shot))
+                print(f"[POSTER] Could not find Post button. Screenshot: {debug_shot}")
+                context.close()
+                return False
+
+            page.wait_for_timeout(3000)
             page.wait_for_load_state("networkidle", timeout=10000)
             print("[POSTER] Post published successfully!")
             context.close()
             return True
 
         except Exception as e:
-            print(f"[POSTER] Error during posting: {e}")
-            error_screenshot = LOGS_DIR / f"error_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.png"
+            print(f"[POSTER] Unexpected error: {e}")
+            ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            error_screenshot = LOGS_DIR / f"error_{ts}.png"
             page.screenshot(path=str(error_screenshot))
             print(f"[POSTER] Error screenshot: {error_screenshot}")
             context.close()
