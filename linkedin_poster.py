@@ -145,15 +145,14 @@ def publish_post(post_text: str, dry_run: bool = False) -> bool:
 
             print("[POSTER] Login confirmed via URL.")
 
-            # Click "Start a post" — it's a div placeholder, not a button
+            # Click "Start a post" — target the specific trigger, not a broad text match
             print("[POSTER] Opening post composer...")
             START_POST_SELECTORS = [
                 "div.share-box-feed-entry__trigger",
-                "div[data-placeholder='Start a post']",
+                "button.share-box-feed-entry__trigger",
                 "div.share-creation-state__placeholder",
-                "p[data-placeholder='What do you want to talk about?']",
-                "div.ql-editor",
-                "div:has-text('Start a post')",
+                "div[class*='share-box-feed-entry__trigger']",
+                "div[class*='share-creation-state']",
             ]
             clicked = False
             for selector in START_POST_SELECTORS:
@@ -168,23 +167,42 @@ def publish_post(post_text: str, dry_run: bool = False) -> bool:
                     print(f"[POSTER] Start-post selector not found: {selector}")
 
             if not clicked:
+                # Last resort: click via JS on the first element containing "Start a post" text
+                print("[POSTER] Trying JS click fallback on share-box trigger...")
+                try:
+                    page.evaluate("""
+                        const el = document.querySelector('div.share-box-feed-entry__trigger')
+                            || document.querySelector('[class*="share-box-feed-entry"]');
+                        if (el) el.click();
+                    """)
+                    clicked = True
+                    print("[POSTER] JS click executed.")
+                except Exception as js_err:
+                    print(f"[POSTER] JS click failed: {js_err}")
+
+            if not clicked:
                 ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
                 debug_shot = LOGS_DIR / f"no_start_post_{ts}.png"
                 page.screenshot(path=str(debug_shot))
-                print(f"[POSTER] Could not find 'Start a post' button. Screenshot: {debug_shot}")
+                print(f"[POSTER] Could not find 'Start a post'. Screenshot: {debug_shot}")
                 context.close()
                 return False
 
-            page.wait_for_timeout(2000)
+            # Wait for modal animation, then confirm it opened
+            page.wait_for_timeout(3000)
+            ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            modal_shot = LOGS_DIR / f"after_click_{ts}.png"
+            page.screenshot(path=str(modal_shot))
+            print(f"[POSTER] Post-click screenshot: {modal_shot}")
 
             # Type post content
             print("[POSTER] Typing post content...")
             EDITOR_SELECTORS = [
                 "div.ql-editor[contenteditable='true']",
                 "div[role='textbox'][contenteditable='true']",
-                "div.editor-content[contenteditable='true']",
+                "div[contenteditable='true']",
                 "div[data-placeholder='What do you want to talk about?']",
-                ".share-creation-state__text-editor .ql-editor",
+                "div.share-creation-state__text-editor div[contenteditable]",
             ]
             editor = None
             for selector in EDITOR_SELECTORS:
