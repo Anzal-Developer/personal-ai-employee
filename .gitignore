@@ -12,3 +12,10 @@ venv/
 # OS
 .DS_Store
 Thumbs.db
+
+# Sensitive credentials & tokens — never commit these
+credentials.json
+gmail_token.json
+gmail_send_token.json
+linkedin_session.json
+linkedin_profile/
