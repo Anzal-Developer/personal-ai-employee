@@ -287,7 +287,15 @@ def publish_post(post_text: str, dry_run: bool = False) -> bool:
                 return False
 
             page.wait_for_timeout(3000)
-            page.wait_for_load_state("networkidle", timeout=10000)
+
+            # Dismiss any post-publish modals (e.g. "Verify now" prompt)
+            try:
+                dismiss = page.locator("button:has-text('Not now'), button[aria-label='Dismiss']").first
+                dismiss.click(timeout=5000)
+                print("[POSTER] Dismissed post-publish modal.")
+            except Exception:
+                pass  # No modal, that's fine
+
             print("[POSTER] Post published successfully!")
             context.close()
             return True
