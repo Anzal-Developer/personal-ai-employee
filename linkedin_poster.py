@@ -145,64 +145,89 @@ def publish_post(post_text: str, dry_run: bool = False) -> bool:
 
             print("[POSTER] Login confirmed via URL.")
 
-            # Click "Start a post" — target the specific trigger, not a broad text match
+            # Click "Start a post" — LinkedIn uses obfuscated CSS classes, use text/JS approach
             print("[POSTER] Opening post composer...")
-            START_POST_SELECTORS = [
-                "div.share-box-feed-entry__trigger",
-                "button.share-box-feed-entry__trigger",
-                "div.share-creation-state__placeholder",
-                "div[class*='share-box-feed-entry__trigger']",
-                "div[class*='share-creation-state']",
-            ]
             clicked = False
-            for selector in START_POST_SELECTORS:
-                try:
-                    btn = page.locator(selector).first
-                    btn.wait_for(timeout=10000)
-                    btn.click()
-                    print(f"[POSTER] Clicked start-post via: {selector}")
+
+            # Approach 1: Click the parent of the <P> that says "Start a post"
+            try:
+                page.evaluate("""() => {
+                    for (const el of document.querySelectorAll('p')) {
+                        if (el.textContent.trim() === 'Start a post') {
+                            el.parentElement.click();
+                            return;
+                        }
+                    }
+                }""")
+                page.wait_for_timeout(3000)
+                # Check if modal/editor appeared
+                if page.locator("div[contenteditable='true']").count() > 0:
+                    print("[POSTER] Clicked via P parent — editor detected.")
                     clicked = True
-                    break
-                except PlaywrightTimeout:
-                    print(f"[POSTER] Start-post selector not found: {selector}")
+            except Exception as e:
+                print(f"[POSTER] P parent click failed: {e}")
 
+            # Approach 2: Playwright get_by_text on the P, then click ancestor
             if not clicked:
-                # Last resort: click via JS on the first element containing "Start a post" text
-                print("[POSTER] Trying JS click fallback on share-box trigger...")
                 try:
-                    page.evaluate("""
-                        const el = document.querySelector('div.share-box-feed-entry__trigger')
-                            || document.querySelector('[class*="share-box-feed-entry"]');
-                        if (el) el.click();
-                    """)
-                    clicked = True
-                    print("[POSTER] JS click executed.")
-                except Exception as js_err:
-                    print(f"[POSTER] JS click failed: {js_err}")
+                    p_el = page.get_by_text("Start a post", exact=True).first
+                    p_el.click()
+                    page.wait_for_timeout(3000)
+                    if page.locator("div[contenteditable='true']").count() > 0:
+                        print("[POSTER] Clicked via get_by_text — editor detected.")
+                        clicked = True
+                except Exception as e:
+                    print(f"[POSTER] get_by_text click failed: {e}")
 
+            # Approach 3: Climb up from the P to find a clickable ancestor
             if not clicked:
-                ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-                debug_shot = LOGS_DIR / f"no_start_post_{ts}.png"
-                page.screenshot(path=str(debug_shot))
-                print(f"[POSTER] Could not find 'Start a post'. Screenshot: {debug_shot}")
-                context.close()
-                return False
+                try:
+                    page.evaluate("""() => {
+                        for (const el of document.querySelectorAll('p')) {
+                            if (el.textContent.trim() === 'Start a post') {
+                                let node = el;
+                                for (let i = 0; i < 5; i++) {
+                                    node = node.parentElement;
+                                    if (!node) break;
+                                    const role = node.getAttribute('role');
+                                    const tag = node.tagName;
+                                    if (role === 'button' || tag === 'BUTTON') {
+                                        node.click();
+                                        return;
+                                    }
+                                }
+                                // fallback: click 2 levels up
+                                if (el.parentElement && el.parentElement.parentElement) {
+                                    el.parentElement.parentElement.click();
+                                }
+                                return;
+                            }
+                        }
+                    }""")
+                    page.wait_for_timeout(3000)
+                    if page.locator("div[contenteditable='true']").count() > 0:
+                        print("[POSTER] Clicked via ancestor walk — editor detected.")
+                        clicked = True
+                except Exception as e:
+                    print(f"[POSTER] Ancestor walk click failed: {e}")
 
-            # Wait for modal animation, then confirm it opened
-            page.wait_for_timeout(3000)
+            # Save screenshot to show state after all click attempts
             ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             modal_shot = LOGS_DIR / f"after_click_{ts}.png"
             page.screenshot(path=str(modal_shot))
             print(f"[POSTER] Post-click screenshot: {modal_shot}")
 
+            if not clicked:
+                print("[POSTER] Could not open post composer after 3 attempts.")
+                context.close()
+                return False
+
             # Type post content
             print("[POSTER] Typing post content...")
             EDITOR_SELECTORS = [
-                "div.ql-editor[contenteditable='true']",
-                "div[role='textbox'][contenteditable='true']",
                 "div[contenteditable='true']",
-                "div[data-placeholder='What do you want to talk about?']",
-                "div.share-creation-state__text-editor div[contenteditable]",
+                "div[role='textbox']",
+                "div[contenteditable]",
             ]
             editor = None
             for selector in EDITOR_SELECTORS:
@@ -238,7 +263,6 @@ def publish_post(post_text: str, dry_run: bool = False) -> bool:
             # Click Post button
             print("[POSTER] Clicking Post button...")
             POST_BTN_SELECTORS = [
-                "button.share-actions__primary-action",
                 "button[aria-label='Post']",
                 "button:has-text('Post')",
             ]
