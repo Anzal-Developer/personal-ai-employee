@@ -1,0 +1,23 @@
+{
+  "mcpServers": {
+    "odoo": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["run", "/mnt/c/Users/anzal/Desktop/AN-hack-0/odoo_mcp.py"],
+      "env": {
+        "ODOO_URL": "http://localhost:8069",
+        "ODOO_DB": "odoo",
+        "ODOO_USER": "admin",
+        "ODOO_PASSWORD": "admin"
+      }
+    }
+  },
+  "permissions": {
+    "allow": [
+      "Bash(docker*)",
+      "Bash(uv run odoo_mcp.py*)",
+      "Bash(uv run facebook_poster.py*)",
+      "Bash(uv run facebook_watcher.py*)"
+    ]
+  }
+}

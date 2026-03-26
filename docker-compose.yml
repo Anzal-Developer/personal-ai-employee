@@ -1,0 +1,73 @@
+version: "3.8"
+
+# AI Employee Gold Tier — Odoo Community (self-hosted accounting)
+# Usage:
+#   docker compose up -d          # start in background
+#   docker compose logs -f odoo   # follow logs
+#   docker compose down           # stop (keeps data)
+#   docker compose down -v        # stop + wipe data (fresh install)
+#
+# First run: Odoo will auto-install 'base' and 'account' modules.
+# Web UI: http://localhost:8069
+# Default admin: admin / admin  (set ODOO_ADMIN_PASSWD to change)
+
+services:
+
+  db:
+    image: postgres:16-alpine
+    container_name: odoo_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: odoo
+      POSTGRES_USER: odoo
+      POSTGRES_PASSWORD: odoo_password
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - odoo_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U odoo -d odoo"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - odoo_net
+
+  odoo:
+    image: odoo:17
+    container_name: odoo_app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      HOST: db
+      PORT: 5432
+      USER: odoo
+      PASSWORD: odoo_password
+    ports:
+      - "8069:8069"
+      - "8071:8071"   # longpolling / live chat
+    volumes:
+      - odoo_app_data:/var/lib/odoo
+      - ./odoo_addons:/mnt/extra-addons:ro
+      - ./odoo.conf:/etc/odoo/odoo.conf:ro
+    networks:
+      - odoo_net
+    command: >
+      --db_host=db
+      --db_port=5432
+      --db_user=odoo
+      --db_password=odoo_password
+      --database=odoo
+      --init=base,account,account_accountant,contacts,sale,purchase
+      --without-demo=all
+
+volumes:
+  odoo_db_data:
+    driver: local
+  odoo_app_data:
+    driver: local
+
+networks:
+  odoo_net:
+    driver: bridge

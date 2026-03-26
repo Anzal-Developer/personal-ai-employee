@@ -105,9 +105,81 @@ Every Monday, the AI Employee generates a briefing that includes:
 - Summary of completed tasks from the past week
 - Pending approvals and blockers
 - Any anomalies or items requiring attention
+- Odoo financial summary (revenue, expenses, overdue invoices)
+- Social media activity (LinkedIn + Facebook posts)
 
-This is stored in `/Done/CEO_Briefing_YYYY-MM-DD.md`.
+This is stored in `/Done/CEO_BRIEFING_YYYY-MM-DD.md`.
 
 ---
 
-*Last updated: 2026-03-14*
+## Gold Tier: Facebook Integration
+
+The AI Employee monitors Facebook notifications and messages via `facebook_watcher.py`.
+
+### Facebook Rules
+- **Autonomous**: Read notifications, summarize messages, create needs-action files
+- **Approval required**: Posting to Facebook (HITL via FACEBOOK_POST_*.md workflow)
+- **Session**: Managed via Playwright persistent profile in `facebook_profile/`
+- **Watcher**: Checks every 5 minutes, routes new items to `/Needs_Action/FACEBOOK_*.md`
+- **Poster**: Watches `/Approved/FACEBOOK_POST_*.md`, publishes, archives to `/Done/`
+
+### Facebook Post Workflow
+1. Use `/facebook-post` skill to draft a post
+2. Draft saved to `/Pending_Approval/FACEBOOK_POST_*.md`
+3. Human reviews and moves to `/Approved`
+4. `facebook_poster.py` detects and publishes, archives to `/Done/`
+
+---
+
+## Gold Tier: Odoo Accounting Integration
+
+Self-hosted Odoo Community runs via Docker on `http://localhost:8069`.
+The `odoo` MCP server exposes accounting tools to Claude.
+
+### Odoo Rules
+- **Autonomous**: list customers, list invoices, get financial summary, create drafts
+- **Approval required**: confirm/post invoices, record confirmed payments
+- **Docker**: `docker compose up -d` to start, `docker compose down` to stop
+- **Credentials**: admin/admin (change after first setup)
+
+### Odoo Tools Available (via MCP)
+- `check_odoo_connection` — verify connectivity
+- `list_customers` / `create_customer` — customer management
+- `list_invoices` / `create_invoice` / `confirm_invoice` — invoicing
+- `record_expense` — vendor bills / expenses
+- `get_financial_summary` — revenue, expenses, profit by period
+- `list_products` / `create_product` — product catalog
+
+### Accounting HITL Workflow
+1. Claude calls `create_invoice` (creates draft)
+2. Creates approval file in `/Pending_Approval/INVOICE_*.md`
+3. Human approves → Claude calls `confirm_invoice`
+4. Logs the confirmed action
+
+---
+
+## Gold Tier: Ralph Wiggum Autonomous Loop
+
+The `ralph_wiggum.sh` stop hook keeps Claude working autonomously until all
+items in `/Needs_Action` are processed:
+
+- If items remain in `/Needs_Action`: blocks exit, re-injects vault-triage prompt
+- If `/Needs_Action` is empty OR max 10 iterations reached: allows exit
+- Prevents infinite loops with iteration counter
+
+To enable: the hook is configured in `.claude/settings.json` automatically.
+
+---
+
+## Watcher Scripts Summary
+
+| Script | Monitors | Interval | Output |
+|--------|----------|----------|--------|
+| `gmail_watcher.py` | Gmail (unread/important) | 2 min | `GMAIL_*.md` |
+| `linkedin_watcher.py` | LinkedIn notifications | 5 min | `LINKEDIN_*.md` |
+| `facebook_watcher.py` | Facebook notifications/messages | 5 min | `FACEBOOK_*.md` |
+| `watcher.py` | Local `/Drop` folder | Real-time | `DROP_*.md` |
+
+---
+
+*Last updated: 2026-03-26 (Gold Tier)*
