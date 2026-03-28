@@ -175,21 +175,25 @@ def check_no_secrets_staged() -> bool:
 # ── Main Sync Cycle ────────────────────────────────────────────────────────────
 
 def sync_once(message: str = None) -> bool:
-    """Full sync cycle: pull → check secrets → commit → push."""
+    """Full sync cycle: commit local changes → pull → push.
+    Order matters: commit first so 'git pull --rebase' never fails on dirty tree.
+    """
     ok = True
 
-    # 1. Pull latest
+    # 1. Stage + commit any local vault changes FIRST (so pull is clean)
+    if git_has_changes():
+        check_no_secrets_staged()   # strip any accidental secrets
+        git_commit_and_push(message)
+
+    # 2. Pull latest from remote (now safe — working tree is clean)
     if not git_pull():
         ok = False
 
-    # 2. Check for secrets about to be staged
-    if not check_no_secrets_staged():
-        ok = False
-
-    # 3. Commit and push vault changes
-    if git_has_changes():
-        if not git_commit_and_push(message):
-            ok = False
+    # 3. If the pull brought new changes that need a second push (rare), do it
+    run_git(["add"] + SAFE_VAULT_PATHS)
+    if git_has_staged_changes():
+        check_no_secrets_staged()
+        git_commit_and_push(f"[{AGENT_ID}] post-pull sync")
 
     return ok
 
