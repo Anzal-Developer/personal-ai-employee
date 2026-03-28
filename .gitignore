@@ -13,7 +13,7 @@ venv/
 .DS_Store
 Thumbs.db
 
-# Sensitive credentials & tokens — never commit these
+# Sensitive credentials & tokens — never commit these (Platinum security rule)
 credentials.json
 gmail_token.json
 gmail_send_token.json
@@ -23,3 +23,7 @@ facebook_session.json
 facebook_profile/
 facebook_seen.json
 odoo_addons/
+.env
+*.pem
+*.key
+hackathon.pem
